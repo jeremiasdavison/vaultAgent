@@ -6,3 +6,5 @@ __pycache__/
 .env
 master.key
 *.key
+web/node_modules/
+web/dist/

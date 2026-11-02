@@ -20,6 +20,19 @@ uv run llaverito create-admin --email vos@vicentelopez.gov.ar
 uv run llaverito serve                          # http://127.0.0.1:8000
 ```
 
+La interfaz para ver y desencriptar llaves está en `web/` (React + Vite). Con el servidor arriba:
+
+```bash
+cd web
+npm install
+npm run dev          # http://127.0.0.1:5173 , proxy al API en :8000
+npm run build        # web/dist: a partir de ahí, `llaverito serve` abre esta interfaz
+```
+
+La consola anterior (agentes, aprobaciones, auditoría, usuarios) sigue en `/classic`.
+
+En Windows, la clave maestra se define así: `$env:LLAVERITO_MASTER_KEY_FILE = ".\master.key"`.
+
 Tests: `uv run pytest` (100 tests: cifrado, API, broker HTTP, SSH real contra un servidor en proceso, aprobaciones, auditoría, login AD contra una API AD simulada, compartir credenciales con vencimiento y pruebas adversariales de seguridad).
 
 > En Windows, si el entorno virtual queda en una ruta larga (>260 caracteres) los módulos compilados no cargan.

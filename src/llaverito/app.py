@@ -13,6 +13,7 @@ from .mcp_server import build_mcp
 from .runtime import build_runtime
 
 STATIC_DIR = Path(__file__).parent / "static"
+DIST_DIR = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -99,6 +100,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.broker = broker
     app.include_router(router)
     app.router.routes.extend(mcp_asgi.routes)  # expone POST /mcp
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="ui")
+    app.mount("/classic", StaticFiles(directory=STATIC_DIR, html=True), name="classic")
+    ui_dir = DIST_DIR if (DIST_DIR / "index.html").is_file() else STATIC_DIR
+    app.mount("/", StaticFiles(directory=ui_dir, html=True), name="ui")
     app.add_middleware(SecurityMiddleware, broker=broker)
     return app

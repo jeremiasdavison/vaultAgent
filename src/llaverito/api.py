@@ -6,7 +6,7 @@ from typing import Annotated, Any, Iterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from . import audit
@@ -145,6 +145,12 @@ class LoginIn(BaseModel):
     password: str
 
 
+class SetupIn(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=255)
+    password: str
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     name: str = Field(min_length=1, max_length=255)
@@ -279,6 +285,43 @@ def _login_ad(db: Session, rt: Runtime, request: Request, email: str, password: 
 @router.get("/auth/config")
 def auth_config(rt: RT) -> dict:
     return {"ad_enabled": rt.ad is not None, "ad_domain": rt.settings.ad_email_domain}
+
+
+def _user_count(db: Session) -> int:
+    return db.scalar(select(func.count()).select_from(User)) or 0
+
+
+@router.get("/auth/setup")
+def setup_status(db: DB) -> dict:
+    return {"needs_setup": _user_count(db) == 0}
+
+
+@router.post("/auth/setup")
+def setup_admin(body: SetupIn, request: Request, response: Response, rt: RT, db: DB) -> dict:
+    """Crea el primer administrador. Después de eso el endpoint queda cerrado."""
+    csrf_check(request)
+    if _user_count(db) != 0:
+        raise HTTPException(409, "La bóveda ya tiene un administrador. Entrá con tu email.")
+    try:
+        password_hash = hash_password(body.password)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    user = User(email=str(body.email).lower(), name=body.name.strip(), password_hash=password_hash, role="admin")
+    db.add(user)
+    db.flush()
+    token = make_session_token(user, rt.jwt_secret, rt.settings.session_ttl_minutes)
+    response.set_cookie(
+        COOKIE,
+        token,
+        max_age=rt.settings.session_ttl_minutes * 60,
+        httponly=True,
+        samesite="strict",
+        secure=rt.settings.cookie_secure,
+        path="/",
+    )
+    log(db, user, request, "user_create", target=user.email, detail={"role": "admin", "via": "setup"})
+    db.commit()
+    return user_out(user)
 
 
 def check_password(rt: Runtime, user: User, password: str) -> bool:

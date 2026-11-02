@@ -19,6 +19,30 @@ def new_cred(admin, folder, name="github", **over):
     return admin.post("/api/credentials", json=body)
 
 
+def test_first_admin_is_created_from_the_ui(tmp_path):
+    from conftest import make_settings
+    from llaverito.app import create_app
+
+    app = create_app(make_settings(tmp_path))
+    client = TestClient(app, base_url="http://testserver", headers=CSRF)
+    with client:
+        assert client.get("/api/auth/setup").json()["needs_setup"] is True
+        short = client.post("/api/auth/setup", json={"email": "vos@ejemplo.com", "name": "Vos", "password": "corta"})
+        assert short.status_code == 422
+        created = client.post(
+            "/api/auth/setup",
+            json={"email": "vos@ejemplo.com", "name": "Vos", "password": "una clave larga"},
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["role"] == "admin"
+        assert client.get("/api/auth/me").status_code == 200
+        again = client.post(
+            "/api/auth/setup",
+            json={"email": "otro@ejemplo.com", "name": "Otro", "password": "una clave larga"},
+        )
+        assert again.status_code == 409
+
+
 def test_requires_auth_and_csrf(env):
     anon = TestClient(env.app, base_url="http://testserver")
     assert anon.get("/api/credentials").status_code == 401

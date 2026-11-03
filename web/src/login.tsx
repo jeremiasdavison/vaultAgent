@@ -1,21 +1,43 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
-import { KeyMark } from "./icons";
+import { Icon, KeyMark } from "./icons";
 import type { User } from "./types";
 
 type Gate = "loading" | "setup" | "login" | "offline";
 
+const GITHUB_ERRORS: Record<string, string> = {
+  github_state: "El inicio con GitHub venció o se abrió en otra pestaña. Volvé a intentarlo.",
+  github_rejected: "GitHub no confirmó tu cuenta. Volvé a intentarlo.",
+  github_inactive: "Tu cuenta de GitHub está deshabilitada en Llaverito. Pedile a un administrador que la active.",
+};
+
+function takeLoginError(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("login_error");
+  if (!code) return null;
+  params.delete("login_error");
+  const query = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  return GITHUB_ERRORS[code] ?? "No se pudo entrar con GitHub.";
+}
+
 export function Login({ onSuccess }: { onSuccess: (user: User) => void }) {
   const [gate, setGate] = useState<Gate>("loading");
+  const [github, setGithub] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(takeLoginError);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    api<{ github_enabled?: boolean }>("/auth/config")
+      .then((config) => {
+        if (!cancelled) setGithub(Boolean(config.github_enabled));
+      })
+      .catch(() => undefined);
     api<{ needs_setup: boolean }>("/auth/setup")
       .then((status) => {
         if (!cancelled) setGate(status.needs_setup ? "setup" : "login");
@@ -100,6 +122,16 @@ export function Login({ onSuccess }: { onSuccess: (user: User) => void }) {
           <button className="btn" type="submit" disabled={pending}>
             {pending ? "Entrando…" : gate === "setup" ? "Crear administrador" : "Entrar"}
           </button>
+        ) : null}
+        {gate === "login" && github ? (
+          <>
+            <p className="divider"><span>o</span></p>
+            <a className="btn ghost" href="/api/auth/github/start">
+              <Icon.github />
+              Entrar con GitHub
+            </a>
+            <p className="note">Las cuentas de GitHub entran con permiso de lectura y no pueden desencriptar llaves.</p>
+          </>
         ) : null}
       </form>
     </main>

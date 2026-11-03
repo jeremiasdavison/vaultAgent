@@ -157,6 +157,10 @@ textarea { min-height: 96px; resize: vertical; font-family: var(--mono); font-si
 .lede { color: var(--muted); }
 .login-card .btn { width: 100%; padding: 12px 16px; margin-top: 4px; }
 .login-card code { color: var(--verdigris); }
+.login-card a.btn { text-decoration: none; }
+.login-card .note { font-size: 0.82rem; text-align: center; }
+.divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.82rem; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--hairline-strong); }
 
 /* ------------------------------------------------------------ armazón */
 .shell {

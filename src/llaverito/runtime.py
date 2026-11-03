@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from .config import Settings
 from .crypto import Cipher
 from .adauth import AdClient, AdDirectory
+from .ghauth import GitHubClient
 from .models import Base
 
 
@@ -22,6 +23,7 @@ class Runtime:
     jwt_secret: bytes
     ad: AdClient | None = None
     directory: AdDirectory | None = None
+    github: GitHubClient | None = None
 
     @contextmanager
     def session(self) -> Iterator[Session]:
@@ -58,4 +60,5 @@ def build_runtime(settings: Settings) -> Runtime:
         jwt_secret=cipher.derive_subkey(b"jwt"),
         ad=AdClient(settings) if settings.ad_api_url else None,
         directory=AdDirectory(settings),
+        github=GitHubClient(settings) if settings.github_client_id else None,
     )

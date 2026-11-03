@@ -99,6 +99,25 @@ Detectados al leer el repositorio para integrarla; no afectan a Llaverito por la
 5. Los JWT no llevan `exp` ni `iat` (se pueden reutilizar) y la ruta interna de `/login` es HTTP.
 6. `POST /gruposUser` devuelve 500 para usuarios sin grupos (paréntesis mal ubicado en `jwt.sign`). Llaverito lo trata como falla cerrada.
 
+## Login con GitHub
+
+Creá una OAuth App en GitHub (Settings → Developer settings → OAuth Apps) con callback
+`https://<tu-host>/api/auth/github/callback` (en local: `http://127.0.0.1:8000/api/auth/github/callback`) y definí:
+
+| Variable | Para qué |
+| --- | --- |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Credenciales de la OAuth App. Sin `CLIENT_ID` el botón no aparece |
+| `GITHUB_CALLBACK_URL` | Opcional. La URL pública del callback, si Llaverito corre detrás de un proxy que no pasa el host real |
+| `GITHUB_DEFAULT_ROLE` | `viewer` (por defecto) o `editor` |
+
+Reglas:
+
+- **Entra cualquier cuenta de GitHub**, con el rol por defecto. Un admin puede subirle el rol o desactivarla desde Usuarios.
+- La cuenta se identifica por el **id numérico** de GitHub. Nunca se vincula por email con una cuenta local o de AD: su email interno es
+  `{id}+{login}@users.noreply.github.com`.
+- No tienen contraseña, así que **no pueden desencriptar** (revelar pide reconfirmar la contraseña).
+- El `state` de OAuth va en una cookie `SameSite=Lax` de 10 minutos y se compara en tiempo constante. Cada ingreso y alta queda en auditoría.
+
 ## Compartir credenciales (por poco tiempo o permanente)
 
 Además del acceso por carpeta, quien tiene **escritura** sobre una credencial puede compartirla con una persona concreta

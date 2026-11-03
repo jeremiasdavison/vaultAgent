@@ -250,7 +250,8 @@ export function Vault({
     setError(null);
   }
 
-  const canReveal = selected
+  const passwordless = user.auth_source === "github";
+  const canReveal = selected && !passwordless
     ? selected.allow_reveal && (selected.access === "shared" ? selected.share_level === "reveal" : user.role !== "viewer")
     : false;
   const http = selected ? TYPES.find((entry) => entry.id === selected.type)?.http !== false && !isSsh(String(selected.type)) : false;
@@ -481,7 +482,12 @@ export function Vault({
                     <button className="btn" type="submit">Desencriptar</button>
                   </form>
                 ) : (
-                  <p className="locked"><Icon.lock />Tu acceso no permite ver el valor de esta llave.</p>
+                  <p className="locked">
+                    <Icon.lock />
+                    {passwordless
+                      ? "Entraste con GitHub: para desencriptar hace falta una cuenta con contraseña."
+                      : "Tu acceso no permite ver el valor de esta llave."}
+                  </p>
                 )}
                 {error ? <p className="alert" role="alert">{error}</p> : null}
               </>

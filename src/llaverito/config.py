@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     ad_v2_cache_seconds: int = 300
     ad_v2_stale_seconds: int = 86400  # cuánto se tolera que la v2 no responda usando el último dato conocido
 
+    # --- Login con GitHub (OAuth App). Vacío = deshabilitado. Cualquier cuenta de GitHub entra con este rol. ---
+    github_client_id: str = ""
+    github_client_secret: SecretStr | None = None
+    github_callback_url: str = ""  # ej. https://llaverito.vicentelopez.gov.ar/api/auth/github/callback ; vacío = se deduce del pedido
+    github_default_role: str = "viewer"
+
     approval_ttl_seconds: int = 600
     agent_rate_limit_per_minute: int = 60
 
@@ -99,6 +105,10 @@ class Settings(BaseSettings):
             raise ConfigError("Falta LLAVERITO_AD_V2_API_KEY para usar la API AD v2.")
         if self.ad_default_role not in ("viewer", "editor"):
             raise ConfigError("LLAVERITO_AD_DEFAULT_ROLE debe ser viewer o editor.")
+        if self.github_client_id and not self.github_client_secret:
+            raise ConfigError("Falta LLAVERITO_GITHUB_CLIENT_SECRET para usar el login con GitHub.")
+        if self.github_default_role not in ("viewer", "editor"):
+            raise ConfigError("LLAVERITO_GITHUB_DEFAULT_ROLE debe ser viewer o editor.")
 
     def mcp_allowed_hosts(self) -> list[str]:
         hosts = ["localhost:*", "127.0.0.1:*", "[::1]:*"]

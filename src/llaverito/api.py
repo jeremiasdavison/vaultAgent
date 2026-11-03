@@ -1,10 +1,13 @@
 """API REST para la interfaz web (personas). Los agentes usan el endpoint MCP, no esta API."""
 
+import hmac
 import re
+import secrets
 from datetime import timedelta
 from typing import Annotated, Any, Iterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
@@ -13,6 +16,8 @@ from . import audit
 from .adauth import AdAuthFailed, AdUnavailable, normalize_identity
 from .broker import scan_host_key
 from .credtypes import ALL_TYPES, SshMeta, ValidationFailure, validate_meta
+from .ghauth import GitHubFailed
+from .ghauth import email_prefix as github_email_prefix
 from .models import (
     Agent,
     AgentGrant,
@@ -53,6 +58,8 @@ router = APIRouter(prefix="/api")
 throttle = LoginThrottle()
 email_throttle = LoginThrottle(max_failures=20, window_seconds=900)  # ataques distribuidos contra una cuenta
 COOKIE = "llv_session"
+OAUTH_COOKIE = "llv_oauth_state"
+OAUTH_PATH = "/api/auth/github"
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "llaverito"
 
@@ -284,7 +291,72 @@ def _login_ad(db: Session, rt: Runtime, request: Request, email: str, password: 
 
 @router.get("/auth/config")
 def auth_config(rt: RT) -> dict:
-    return {"ad_enabled": rt.ad is not None, "ad_domain": rt.settings.ad_email_domain}
+    return {"ad_enabled": rt.ad is not None, "ad_domain": rt.settings.ad_email_domain, "github_enabled": rt.github is not None}
+
+
+def _github_callback_url(request: Request, rt: Runtime) -> str:
+    return rt.settings.github_callback_url or str(request.url_for("github_callback"))
+
+
+def _github_fail(db: Session, request: Request, reason: str, **detail: Any) -> RedirectResponse:
+    log(db, None, request, "login", "denied", detail={"source": "github", "reason": reason, **detail})
+    db.commit()
+    response = RedirectResponse(f"/?login_error={reason}", status_code=303)
+    response.delete_cookie(OAUTH_COOKIE, path=OAUTH_PATH)
+    return response
+
+
+@router.get("/auth/github/start")
+def github_start(request: Request, rt: RT) -> RedirectResponse:
+    if rt.github is None:
+        raise HTTPException(404, "El login con GitHub no está habilitado")
+    state = secrets.token_urlsafe(32)
+    response = RedirectResponse(rt.github.authorize_url(_github_callback_url(request, rt), state), status_code=303)
+    # Lax y no Strict: el callback llega como navegación desde github.com y tiene que traer esta cookie.
+    response.set_cookie(OAUTH_COOKIE, state, max_age=600, httponly=True, samesite="lax",
+                        secure=rt.settings.cookie_secure, path=OAUTH_PATH)
+    return response
+
+
+@router.get("/auth/github/callback", name="github_callback")
+def github_callback(request: Request, rt: RT, db: DB, code: str = "", state: str = "") -> RedirectResponse:
+    if rt.github is None:
+        raise HTTPException(404, "El login con GitHub no está habilitado")
+    expected = request.cookies.get(OAUTH_COOKIE, "")
+    if not (code and state and expected and hmac.compare_digest(state, expected)):
+        return _github_fail(db, request, "github_state")
+    try:
+        ident = rt.github.identify(code, _github_callback_url(request, rt))
+    except GitHubFailed as exc:
+        return _github_fail(db, request, "github_rejected", error=str(exc)[:200])
+    user = db.scalar(
+        select(User).where(User.auth_source == "github", User.email.like(f"{github_email_prefix(ident.id)}%"))
+    )
+    if user is None:
+        user = User(email=ident.email, name=ident.name, password_hash=UNUSABLE_HASH,
+                    role=rt.settings.github_default_role, auth_source="github", department=f"GitHub @{ident.login}")
+        db.add(user)
+        db.flush()
+        log(db, user, request, "user_provision", detail={"source": "github", "role": user.role, "github_id": ident.id})
+    else:
+        user.email, user.name, user.department = ident.email, ident.name, f"GitHub @{ident.login}"
+    if not user.active:
+        return _github_fail(db, request, "github_inactive", github_id=ident.id)
+    user.last_login_at = utcnow()
+    response = RedirectResponse("/", status_code=303)
+    response.delete_cookie(OAUTH_COOKIE, path=OAUTH_PATH)
+    response.set_cookie(
+        COOKIE,
+        make_session_token(user, rt.jwt_secret, rt.settings.session_ttl_minutes),
+        max_age=rt.settings.session_ttl_minutes * 60,
+        httponly=True,
+        samesite="strict",
+        secure=rt.settings.cookie_secure,
+        path="/",
+    )
+    log(db, user, request, "login", detail={"source": "github", "github_id": ident.id})
+    db.commit()
+    return response
 
 
 def _user_count(db: Session) -> int:
@@ -326,6 +398,8 @@ def setup_admin(body: SetupIn, request: Request, response: Response, rt: RT, db:
 
 def check_password(rt: Runtime, user: User, password: str) -> bool:
     """Verifica la contraseña actual: localmente, o contra AD para cuentas de AD."""
+    if user.auth_source == "github":
+        return False  # sin contraseña: no pueden confirmar acciones sensibles
     if user.auth_source != "ad":
         return verify_password(user.password_hash, password)
     if rt.ad is None:
@@ -433,6 +507,8 @@ def patch_user(user_id: str, body: UserPatch, admin: Admin, request: Request, db
             raise HTTPException(422, "Las cuentas de AD se autentican contra Active Directory: no tienen contraseña local")
         if body.role is not None and body.role != user.role and (rt.settings.admin_groups or rt.settings.editor_groups):
             raise HTTPException(409, "El rol de las cuentas de AD lo define su pertenencia a grupos de AD")
+    if user.auth_source == "github" and body.password:
+        raise HTTPException(422, "Las cuentas de GitHub se autentican con GitHub: no tienen contraseña local")
     changed = []
     if body.name is not None:
         user.name = body.name

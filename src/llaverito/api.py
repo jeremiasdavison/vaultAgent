@@ -297,7 +297,15 @@ def auth_config(rt: RT) -> dict:
 
 
 def _github_callback_url(request: Request, rt: Runtime) -> str:
-    return rt.settings.github_callback_url or str(request.url_for("github_callback"))
+    if rt.settings.github_callback_url:
+        return rt.settings.github_callback_url
+    # url_for puede devolver http:// en Vercel si no hay ProxyHeaders; el callback de GitHub tiene que ser https.
+    forwarded_host = request.headers.get("x-forwarded-host")
+    host = (forwarded_host.split(",")[0].strip() if forwarded_host else "") or request.url.netloc
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+    if rt.settings.cookie_secure:
+        proto = "https"
+    return f"{proto}://{host}/api/auth/github/callback"
 
 
 def _github_fail(db: Session, request: Request, reason: str, **detail: Any) -> RedirectResponse:
@@ -325,8 +333,11 @@ def github_callback(request: Request, rt: RT, db: DB, code: str = "", state: str
     if rt.github is None:
         raise HTTPException(404, "El login con GitHub no está habilitado")
     expected = request.cookies.get(OAUTH_COOKIE, "")
-    if not (code and state and expected and hmac.compare_digest(state, expected)):
+    if not (state and expected and hmac.compare_digest(state, expected)):
         return _github_fail(db, request, "github_state")
+    denied = request.query_params.get("error", "")
+    if denied or not code:
+        return _github_fail(db, request, "github_rejected", error=(denied or "missing_code")[:80])
     try:
         ident = rt.github.identify(code, _github_callback_url(request, rt))
     except GitHubFailed as exc:

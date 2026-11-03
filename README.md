@@ -127,9 +127,9 @@ Creá una OAuth App en GitHub (Settings → Developer settings → OAuth Apps) c
 
 | Variable | Para qué |
 | --- | --- |
-| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Credenciales de la OAuth App. Sin `CLIENT_ID` el botón no aparece |
-| `GITHUB_CALLBACK_URL` | Opcional. La URL pública del callback, si Llaverito corre detrás de un proxy que no pasa el host real |
-| `GITHUB_DEFAULT_ROLE` | `viewer` (por defecto) o `editor` |
+| `LLAVERITO_GITHUB_CLIENT_ID`, `LLAVERITO_GITHUB_CLIENT_SECRET` | Credenciales de la OAuth App. Sin `CLIENT_ID` el botón no aparece. En Vercel también se aceptan `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` sin prefijo |
+| `LLAVERITO_GITHUB_CALLBACK_URL` | Opcional. Tiene que ser exactamente `https://<tu-host>/api/auth/github/callback` (la misma URL registrada en la OAuth App). También se acepta `GITHUB_CALLBACK_URL` |
+| `LLAVERITO_GITHUB_DEFAULT_ROLE` | `viewer` (por defecto) o `editor` |
 
 Reglas:
 

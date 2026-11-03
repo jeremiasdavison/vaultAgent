@@ -50,7 +50,7 @@ class GitHubClient:
         self.timeout = settings.ad_timeout_seconds
 
     def authorize_url(self, redirect_uri: str, state: str) -> str:
-        query = {"client_id": self.client_id, "redirect_uri": redirect_uri, "state": state, "scope": "read:user", "allow_signup": "false"}
+        query = {"client_id": self.client_id, "redirect_uri": redirect_uri, "state": state, "scope": "read:user", "allow_signup": "true"}
         return f"{AUTHORIZE_URL}?{urlencode(query)}"
 
     def identify(self, code: str, redirect_uri: str) -> GitHubIdentity:

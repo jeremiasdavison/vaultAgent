@@ -26,3 +26,24 @@ def test_vercel_requires_postgres_and_secures_cookies():
 def test_outside_vercel_nothing_changes():
     s = apply_platform(base(), {})
     assert s.database_url.startswith("sqlite") and s.cookie_secure is False
+
+
+def test_unprefixed_github_env_fills_settings():
+    s = apply_platform(
+        base(),
+        {
+            "GITHUB_CLIENT_ID": "Ov23liPublicId",
+            "GITHUB_CLIENT_SECRET": "not-a-real-secret",
+            "GITHUB_CALLBACK_URL": "https://llaverito-alpha.vercel.app/api/auth/github/callback",
+        },
+    )
+    assert s.github_client_id == "Ov23liPublicId"
+    assert s.github_client_secret is not None and s.github_client_secret.get_secret_value() == "not-a-real-secret"
+    assert s.github_callback_url == "https://llaverito-alpha.vercel.app/api/auth/github/callback"
+
+
+def test_prefixed_github_env_is_not_overridden_by_unprefixed():
+    own = base()
+    own.github_client_id = "from-prefix"
+    s = apply_platform(own, {"GITHUB_CLIENT_ID": "unprefixed"})
+    assert s.github_client_id == "from-prefix"

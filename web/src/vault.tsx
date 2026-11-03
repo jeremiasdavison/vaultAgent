@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
+import { EnvPanel } from "./envpanel";
 import { Icon, KeyMark } from "./icons";
+import { Requests } from "./requests";
 import { TYPE_LABEL, asString, asStringList, type Credential, type CredType, type Folder, type User } from "./types";
 
 const SHARED = "__shared__";
@@ -78,6 +80,9 @@ export function Vault({
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft>(() => emptyDraft(""));
   const [folderName, setFolderName] = useState("");
+  const [view, setView] = useState<"keys" | "requests">("keys");
+  const [pendingCount, setPendingCount] = useState(0);
+  const [envOpen, setEnvOpen] = useState(false);
 
   async function load(nextFolder = folderId) {
     const params = new URLSearchParams();
@@ -93,6 +98,12 @@ export function Vault({
 
   useEffect(() => {
     void load(null).catch(fail);
+    void Promise.all([
+      api<unknown[]>("/env-requests?status=pending"),
+      api<unknown[]>("/approvals?status=pending"),
+    ])
+      .then(([envPending, approvalsPending]) => setPendingCount(envPending.length + approvalsPending.length))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -123,6 +134,7 @@ export function Vault({
   }
 
   function chooseFolder(id: string | null) {
+    setView("keys");
     setFolderId(id);
     setSelectedId(null);
     setSecret(null);
@@ -269,13 +281,18 @@ export function Vault({
         </div>
 
         <nav className="nav-group" aria-label="Vistas">
-          <button className={folderId ? "nav" : "nav on"} type="button" onClick={() => chooseFolder(null)}>
+          <button className={view === "keys" && !folderId ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(null)}>
             <Icon.stack />
             <span>Todas las llaves</span>
           </button>
-          <button className={folderId === SHARED ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(SHARED)}>
+          <button className={view === "keys" && folderId === SHARED ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(SHARED)}>
             <Icon.shared />
             <span>Compartidas conmigo</span>
+          </button>
+          <button className={view === "requests" ? "nav on" : "nav"} type="button" onClick={() => { setView("requests"); setSelectedId(null); setSecret(null); }}>
+            <Icon.check />
+            <span>Solicitudes</span>
+            {pendingCount > 0 ? <b className="count" aria-label={`${pendingCount} pendientes`}>{pendingCount}</b> : null}
           </button>
         </nav>
 
@@ -283,7 +300,7 @@ export function Vault({
           <p className="nav-title">Carpetas</p>
           {folders.length === 0 ? <p className="nav-title">Sin carpetas todavía.</p> : null}
           {folders.map((folder) => (
-            <button key={folder.id} className={folderId === folder.id ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(folder.id)}>
+            <button key={folder.id} className={view === "keys" && folderId === folder.id ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(folder.id)}>
               <Icon.folder />
               <span>{folder.name}</span>
               <small>{folder.level === "write" ? "escritura" : "lectura"}</small>
@@ -319,6 +336,19 @@ export function Vault({
       </aside>
 
       <main className="main">
+        {view === "requests" ? (
+          <>
+            <header className="topline">
+              <div className="title">
+                <h1>Solicitudes</h1>
+                <p>Lo que tus agentes y runners piden usar. Nada se entrega sin que alguien lo apruebe.</p>
+              </div>
+              <a className="classic" href="/classic/#/agentes">Agentes y tokens</a>
+            </header>
+            <Requests onError={fail} onNotice={setNotice} onCount={setPendingCount} />
+          </>
+        ) : (
+        <>
         <header className="topline">
           <div className="title">
             <h1>{viewTitle}</h1>
@@ -327,6 +357,12 @@ export function Vault({
             </p>
           </div>
           <a className="classic" href="/classic/">Consola clásica</a>
+          {currentFolder ? (
+            <button className="btn ghost" type="button" onClick={() => setEnvOpen(true)}>
+              <Icon.terminal />
+              Variables de entorno
+            </button>
+          ) : null}
           <button
             className="btn"
             type="button"
@@ -395,7 +431,7 @@ export function Vault({
                       </span>
                       <span className="row-main">
                         <strong>{item.name}</strong>
-                        <code>{item.ref}</code>
+                        <code>{item.ref}{item.hint ? `  ••••${item.hint}` : ""}</code>
                       </span>
                       <span className="row-side">
                         <span className="tag">{TYPE_LABEL[item.type] ?? item.type}</span>
@@ -432,6 +468,7 @@ export function Vault({
 
                 <dl className="facts">
                   <div><dt>Referencia</dt><dd><code>{selected.ref}</code></dd></div>
+                  {selected.hint ? <div><dt>Termina en</dt><dd><code>••••{selected.hint}</code></dd></div> : null}
                   <div><dt>Carpeta</dt><dd>{selected.folder}</dd></div>
                   <div><dt>Descripción</dt><dd>{asString(selected.meta.description) || "Sin descripción"}</dd></div>
                   {http ? (
@@ -494,7 +531,20 @@ export function Vault({
             )}
           </section>
         </div>
+        </>
+        )}
       </main>
+
+      {envOpen && currentFolder ? (
+        <EnvPanel
+          folderId={currentFolder.id}
+          credentials={items}
+          canWrite={currentFolder.level === "write"}
+          isAdmin={user.role === "admin"}
+          onClose={() => setEnvOpen(false)}
+          onError={fail}
+        />
+      ) : null}
 
       {notice ? (
         <p className="toast glass" role="status">

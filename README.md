@@ -1,10 +1,15 @@
 # Llaverito
 
-Bóveda de credenciales de la Municipalidad (API keys, accesos SSH, contraseñas) con dos puertas:
+Bóveda de credenciales de la Municipalidad (API keys, accesos SSH, contraseñas) con tres puertas:
 
 - **Web UI** para personas: carpetas, roles, revelar con reconfirmación de contraseña, aprobaciones, auditoría.
 - **Servidor MCP** para agentes: **usan las credenciales sin verlas**. El agente referencia `cred://carpeta/nombre`
   y Llaverito ejecuta la acción del lado servidor, inyectando la autenticación y redactando la salida.
+- **Entorno para CI**: una carpeta mapea credenciales a variables (`OPENAI_API_KEY`); un runner las pide con su token,
+  una persona aprueba y el runner las recibe en un sobre X25519 de un solo uso. Ver [docs/agente-ci.md](docs/agente-ci.md).
+
+Este repo (vaultAgent) reúne lo que antes estaba repartido: el flujo de entorno para CI y la pista `••••abcd` de los
+tokens vienen del PoC en Next.js, que queda archivado.
 
 Diseño y decisiones: [DISENO.md](DISENO.md). Este repo implementa las fases 1 y 2.
 
@@ -33,7 +38,7 @@ La consola anterior (agentes, aprobaciones, auditoría, usuarios) sigue en `/cla
 
 En Windows, la clave maestra se define así: `$env:LLAVERITO_MASTER_KEY_FILE = ".\master.key"`.
 
-Tests: `uv run pytest` (100 tests: cifrado, API, broker HTTP, SSH real contra un servidor en proceso, aprobaciones, auditoría, login AD contra una API AD simulada, compartir credenciales con vencimiento y pruebas adversariales de seguridad).
+Tests: `uv run pytest` (130 tests: cifrado, API, broker HTTP, SSH real contra un servidor en proceso, aprobaciones, auditoría, login AD contra una API AD simulada, compartir credenciales con vencimiento, login con GitHub, entorno para CI con sobres sellados y pruebas adversariales de seguridad).
 
 > En Windows, si el entorno virtual queda en una ruta larga (>260 caracteres) los módulos compilados no cargan.
 > Usá una ruta corta: `UV_PROJECT_ENVIRONMENT=C:\venvs\llaverito`.
@@ -52,6 +57,22 @@ Publicar **detrás de un proxy con TLS** (el compose solo escucha en 127.0.0.1).
 
 Variables principales (`LLAVERITO_*`): `DATABASE_URL`, `MASTER_KEY` / `MASTER_KEY_FILE`, `COOKIE_SECURE`,
 `APPROVAL_TTL_SECONDS`, `AGENT_RATE_LIMIT_PER_MINUTE`, `HTTP_MAX_RESPONSE_BYTES`, `SSH_MAX_TIMEOUT`.
+
+Las columnas nuevas se agregan solas al arrancar sobre una base existente (no hace falta migrar a mano).
+
+### Vercel
+
+`vercel.json` fija el preset **FastAPI** (pisa el de Next.js del proyecto), compila `web/` y usa `index.py` como entrada.
+En el proyecto de Vercel hacen falta:
+
+| Variable | Notas |
+| --- | --- |
+| `DATABASE_URL` o `POSTGRES_URL` | Postgres (la integración de Neon la inyecta). Sin esto no arranca: el disco de Vercel no persiste |
+| `LLAVERITO_MASTER_KEY` | `uv run llaverito gen-key`. Tipo *Secret*. Perderla deja ilegibles los secretos |
+| `LLAVERITO_GITHUB_*` | Opcional, para el login con GitHub; el callback es `https://<dominio>/api/auth/github/callback` |
+
+En Vercel las cookies pasan a `Secure` y los dominios del deploy se suman a los hosts aceptados por MCP. El primer
+administrador se crea desde la pantalla de login. Los límites de intentos viven en memoria de cada instancia.
 
 ## Login con Active Directory (API AD)
 

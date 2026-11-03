@@ -459,3 +459,46 @@ textarea { min-height: 96px; resize: vertical; font-family: var(--mono); font-si
   .row-side { display: none; }
   .modal { padding: 20px; }
 }
+
+/* solicitudes y entorno para CI */
+.nav .count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--brass);
+  color: var(--brass-ink);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-align: center;
+}
+.requests { display: grid; gap: 16px; }
+.panel-head { padding: 14px 14px 8px; }
+.panel-head h2 { font-size: 1.2rem; }
+.panel-head p { color: var(--muted); font-size: 0.88rem; margin-top: 4px; max-width: 70ch; }
+.request {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border-radius: 15px;
+}
+.request + .request { border-top: 1px solid var(--hairline); border-radius: 0; }
+.request .row-main .muted { font-size: 0.84rem; overflow-wrap: anywhere; }
+.request .row-main code { color: var(--verdigris); font-size: 0.78rem; }
+.request-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.env-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.env-keys code { padding: 1px 7px; border-radius: 7px; background: var(--glass-sunken); border: 1px solid var(--hairline); }
+.bindings { list-style: none; margin: 0; padding: 0; border: 1px solid var(--hairline); border-radius: 16px; overflow: hidden; }
+.bindings li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 14px; background: var(--glass-sunken); }
+.bindings li + li { border-top: 1px solid var(--hairline); }
+.bindings code { color: var(--verdigris); font-size: 0.86rem; overflow-wrap: anywhere; }
+.bindings span { color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+.modal code { color: var(--verdigris); font-size: 0.85em; }
+.grid-2 .actions { grid-column: 1 / -1; padding-top: 0; }
+@media (max-width: 520px) {
+  .request { grid-template-columns: 36px minmax(0, 1fr); }
+  .request-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .bindings li { grid-template-columns: minmax(0, 1fr) auto; }
+  .bindings span { grid-column: 1 / -1; grid-row: 2; }
+}

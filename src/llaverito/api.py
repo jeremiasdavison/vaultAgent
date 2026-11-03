@@ -25,6 +25,8 @@ from .models import (
     AuditLog,
     Credential,
     CredentialShare,
+    EnvBinding,
+    EnvRequest,
     Folder,
     FolderAccess,
     User,
@@ -571,6 +573,7 @@ def delete_folder(folder_id: str, admin: Admin, request: Request, db: DB) -> Res
     if db.scalar(select(Credential.id).where(Credential.folder_id == f.id).limit(1)):
         raise HTTPException(409, "La carpeta tiene credenciales; vaciala primero")
     db.execute(delete(AgentGrant).where(AgentGrant.folder_id == f.id))
+    db.execute(delete(EnvRequest).where(EnvRequest.folder_id == f.id))
     db.delete(f)
     log(db, admin, request, "folder_delete", target=f.name)
     db.commit()
@@ -613,6 +616,7 @@ def cred_out(c: Credential, level: str, share: CredentialShare | None = None) ->
         "sensitive": c.sensitive,
         "allow_reveal": c.allow_reveal,
         "version": c.version,
+        "hint": c.hint,
         "can_write": level == "write",
         "access": "shared" if level == "shared" else "folder",
         "created_at": c.created_at.isoformat(),
@@ -749,6 +753,7 @@ def delete_cred(cred_id: str, user: CurrentUser, request: Request, db: DB) -> Re
     cred, _, _ = load_cred(db, user, cred_id, "write")
     db.execute(delete(AgentGrant).where(AgentGrant.credential_id == cred.id))
     db.execute(delete(CredentialShare).where(CredentialShare.credential_id == cred.id))
+    db.execute(delete(EnvBinding).where(EnvBinding.credential_id == cred.id))
     log(db, user, request, "credential_delete", credential=cred)
     db.delete(cred)
     db.commit()

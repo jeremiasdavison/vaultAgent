@@ -73,6 +73,8 @@ class Folder(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(120), unique=True)
     description: Mapped[str] = mapped_column(Text, default="")
+    # Si está definido, solo un runner que declare ese repositorio (owner/repo) puede pedir el entorno.
+    github_repo: Mapped[str | None] = mapped_column(String(140), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
     credentials: Mapped[list["Credential"]] = relationship(back_populates="folder")
@@ -102,6 +104,7 @@ class Credential(Base):
     wrapped_dek: Mapped[bytes] = mapped_column(LargeBinary)
     blob: Mapped[bytes] = mapped_column(LargeBinary)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    hint: Mapped[str | None] = mapped_column(String(8), nullable=True)  # últimos 4 de un token, para reconocerlo
     created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
@@ -177,6 +180,45 @@ class ApprovalRequest(Base):
 
     agent: Mapped[Agent] = relationship()
     credential: Mapped[Credential] = relationship()
+
+
+class EnvBinding(Base):
+    """Variable de entorno de una carpeta de proyecto: OPENAI_API_KEY -> credencial de esa carpeta."""
+
+    __tablename__ = "env_bindings"
+    __table_args__ = (UniqueConstraint("folder_id", "env_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    folder_id: Mapped[str] = mapped_column(ForeignKey("folders.id", ondelete="CASCADE"), index=True)
+    credential_id: Mapped[str] = mapped_column(ForeignKey("credentials.id", ondelete="CASCADE"), index=True)
+    env_key: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    credential: Mapped[Credential] = relationship()
+
+
+class EnvRequest(Base):
+    """Pedido de un runner (con token de agente) para recibir el entorno de una carpeta en un sobre sellado."""
+
+    __tablename__ = "env_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
+    folder_id: Mapped[str] = mapped_column(ForeignKey("folders.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(255))
+    repository: Mapped[str | None] = mapped_column(String(140), nullable=True)
+    wrap_public_key: Mapped[str] = mapped_column(String(64))
+    entries: Mapped[list] = mapped_column(JSON, default=list)  # [{credential_id, env_key}] fijados al pedir
+    status: Mapped[str] = mapped_column(String(12), default="pending")
+    # pending | approved | denied | consumed | expired
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    decided_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    grant_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+    agent: Mapped[Agent] = relationship()
+    folder: Mapped[Folder] = relationship()
 
 
 class AuditLog(Base):

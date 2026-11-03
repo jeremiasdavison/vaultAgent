@@ -1,4 +1,6 @@
 import base64
+import os
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 
@@ -119,6 +121,27 @@ class Settings(BaseSettings):
         return hosts
 
 
+def apply_platform(settings: Settings, env: Mapping[str, str]) -> Settings:
+    """Ajustes para plataformas gestionadas (Vercel): base inyectada por la integración, cookies seguras y hosts."""
+    if "LLAVERITO_DATABASE_URL" not in env:
+        injected = env.get("DATABASE_URL") or env.get("POSTGRES_URL")
+        if injected:
+            settings.database_url = injected
+    if env.get("VERCEL"):
+        if settings.database_url.startswith("sqlite"):
+            raise ConfigError(
+                "En Vercel el disco no persiste: conectá Postgres (por ejemplo Neon) y definí DATABASE_URL o "
+                "LLAVERITO_DATABASE_URL."
+            )
+        settings.cookie_secure = True
+        hosts = [h for h in settings.public_hosts.split(",") if h.strip()]
+        for name in ("VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_BRANCH_URL", "VERCEL_URL"):
+            if env.get(name) and env[name] not in hosts:
+                hosts.append(env[name])
+        settings.public_hosts = ",".join(hosts)
+    return settings
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return apply_platform(Settings(), os.environ)

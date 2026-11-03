@@ -36,12 +36,50 @@ export type Credential = {
   sensitive: boolean;
   allow_reveal: boolean;
   version: number;
+  hint?: string | null;
   can_write: boolean;
   access: "shared" | "folder";
   share_level?: "use" | "reveal";
   shared_until?: string | null;
   shared_permanent?: boolean;
   updated_at: string;
+};
+
+export type EnvBinding = {
+  id: number;
+  env_key: string;
+  credential_id: string;
+  credential: string;
+};
+
+export type FolderEnv = {
+  folder_id: string;
+  folder: string;
+  github_repo: string | null;
+  bindings: EnvBinding[];
+};
+
+export type EnvRequest = {
+  id: string;
+  status: "pending" | "approved" | "denied" | "consumed" | "expired";
+  purpose: string;
+  repository: string | null;
+  folder: string | null;
+  agent: string | null;
+  entries: { env_key: string; credential: string }[];
+  created_at: string;
+  can_decide: boolean;
+};
+
+export type Approval = {
+  id: string;
+  agent: string;
+  credential: string;
+  action: string;
+  summary: string;
+  reason: string;
+  status: string;
+  requested_at: string;
 };
 
 export const TYPE_LABEL: Record<string, string> = {

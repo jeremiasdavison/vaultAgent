@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -39,6 +39,22 @@ class Runtime:
             s.close()
 
 
+def add_missing_columns(engine: Engine) -> None:
+    """create_all no agrega columnas a tablas existentes: suma las nuevas (siempre nullable) a bases viejas."""
+    existing = inspect(engine)
+    tables = set(existing.get_table_names())
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in tables:
+                continue
+            have = {col["name"] for col in existing.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in have or not column.nullable:
+                    continue
+                kind = column.type.compile(dialect=engine.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}'))
+
+
 def build_runtime(settings: Settings) -> Runtime:
     settings.validate_ad()
     url = settings.database_url
@@ -47,10 +63,11 @@ def build_runtime(settings: Settings) -> Runtime:
         kwargs["connect_args"] = {"check_same_thread": False}
         if ":memory:" in url or url in ("sqlite://", "sqlite:///"):
             kwargs["poolclass"] = StaticPool
-    elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    elif url.startswith(("postgresql://", "postgres://")):  # Neon y Vercel entregan postgres://
+        url = "postgresql+psycopg://" + url.split("://", 1)[1]
     engine = create_engine(url, **kwargs)
     Base.metadata.create_all(engine)
+    add_missing_columns(engine)
     cipher = Cipher(settings.load_kek())
     return Runtime(
         settings=settings,

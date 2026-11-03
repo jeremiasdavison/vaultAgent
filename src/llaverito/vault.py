@@ -28,9 +28,30 @@ def _aad(credential_id: str) -> bytes:
     return f"cred:{credential_id}".encode()
 
 
+HINT_TYPES = {"api_key", "bearer_token"}
+HINT_MIN_LEN = 16  # con menos, los últimos 4 serían una parte demasiado grande del secreto
+
+
+def hint_for(ctype: str, secret: dict) -> str | None:
+    """Últimos 4 caracteres de un token largo, para reconocerlo en la lista. Nunca de contraseñas ni claves SSH."""
+    value = secret.get("secret")
+    if ctype not in HINT_TYPES or not isinstance(value, str) or len(value) < HINT_MIN_LEN:
+        return None
+    return value[-4:]
+
+
+def primary_value(ctype: str, secret: dict) -> str:
+    """El valor que va a una variable de entorno: el token, la contraseña o la clave privada."""
+    for name in ("secret", "password", "private_key"):
+        if isinstance(secret.get(name), str):
+            return secret[name]
+    raise VaultError(f"El tipo {ctype} no tiene un valor exportable")
+
+
 def seal(cipher: Cipher, credential: Credential, secret: dict) -> None:
     payload = json.dumps(secret, separators=(",", ":")).encode()
     credential.wrapped_dek, credential.blob = cipher.encrypt(payload, _aad(credential.id))
+    credential.hint = hint_for(credential.type, secret)
 
 
 def open_secret(cipher: Cipher, credential: Credential) -> dict:

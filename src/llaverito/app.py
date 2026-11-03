@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .api import router
+from .envapi import router as env_router
 from .broker import Broker, Unauthorized
 from .config import Settings, get_settings
 from .mcp_server import build_mcp
@@ -99,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.rt = rt
     app.state.broker = broker
     app.include_router(router)
+    app.include_router(env_router)
     app.router.routes.extend(mcp_asgi.routes)  # expone POST /mcp
     app.mount("/classic", StaticFiles(directory=STATIC_DIR, html=True), name="classic")
     ui_dir = DIST_DIR if (DIST_DIR / "index.html").is_file() else STATIC_DIR

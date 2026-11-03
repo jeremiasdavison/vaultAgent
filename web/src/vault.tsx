@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
-import { KeyMark } from "./login";
+import { Icon, KeyMark } from "./icons";
 import { TYPE_LABEL, asString, asStringList, type Credential, type CredType, type Folder, type User } from "./types";
 
 const SHARED = "__shared__";
 const HIDE_AFTER_MS = 3 * 60 * 1000;
+const NOTICE_MS = 4000;
 
 const TYPES: { id: CredType; label: string; http: boolean }[] = [
   { id: "api_key", label: "API key", http: true },
   { id: "bearer_token", label: "Token Bearer", http: true },
-  { id: "basic_auth", label: "Usuario y contraseña (HTTP Basic)", http: true },
+  { id: "basic_auth", label: "HTTP Basic", http: true },
   { id: "password", label: "Contraseña", http: true },
   { id: "ssh_password", label: "SSH con contraseña", http: false },
-  { id: "ssh_key", label: "SSH con clave privada", http: false },
+  { id: "ssh_key", label: "SSH con clave", http: false },
 ];
+
+const ROLE_LABEL: Record<string, string> = { admin: "Administración", editor: "Edición", viewer: "Lectura" };
 
 type Draft = {
   folderId: string;
@@ -41,6 +44,18 @@ const emptyDraft = (folderId: string): Draft => ({
   extra: "",
 });
 
+const isSsh = (type: string) => type.startsWith("ssh");
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
+}
+
+function updatedLabel(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+}
+
 export function Vault({
   user,
   onLogout,
@@ -54,6 +69,7 @@ export function Vault({
   const [items, setItems] = useState<Credential[]>([]);
   const [folderId, setFolderId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [secret, setSecret] = useState<Record<string, string> | null>(null);
   const [password, setPassword] = useState("");
@@ -86,6 +102,12 @@ export function Vault({
   }, [secret]);
 
   useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
     if (selectedId && !items.some((item) => item.id === selectedId)) {
       setSelectedId(null);
       setSecret(null);
@@ -105,6 +127,8 @@ export function Vault({
     setSelectedId(null);
     setSecret(null);
     setPassword("");
+    setTypeFilter(null);
+    setError(null);
     void load(id).catch(fail);
   }
 
@@ -115,7 +139,7 @@ export function Vault({
     setError(null);
   }
 
-  const visible = useMemo(() => {
+  const matching = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return items;
     return items.filter((item) =>
@@ -123,8 +147,17 @@ export function Vault({
     );
   }, [items, query]);
 
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of matching) counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
+    return counts;
+  }, [matching]);
+
+  const visible = typeFilter ? matching.filter((item) => item.type === typeFilter) : matching;
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const writable = folders.filter((folder) => folder.level === "write");
+  const currentFolder = folders.find((folder) => folder.id === folderId);
+  const viewTitle = folderId === SHARED ? "Compartidas conmigo" : currentFolder?.name ?? "Todas las llaves";
 
   async function reveal(event: FormEvent) {
     event.preventDefault();
@@ -211,183 +244,303 @@ export function Vault({
     }
   }
 
+  function openCreate() {
+    setDraft(emptyDraft(writable.find((folder) => folder.id === folderId)?.id ?? writable[0]?.id ?? ""));
+    setCreating(true);
+    setError(null);
+  }
+
   const canReveal = selected
     ? selected.allow_reveal && (selected.access === "shared" ? selected.share_level === "reveal" : user.role !== "viewer")
     : false;
-  const http = selected ? TYPES.find((entry) => entry.id === selected.type)?.http !== false && !String(selected.type).startsWith("ssh") : false;
+  const http = selected ? TYPES.find((entry) => entry.id === selected.type)?.http !== false && !isSsh(String(selected.type)) : false;
+  const draftHttp = TYPES.find((entry) => entry.id === draft.type)?.http ?? true;
 
   return (
-    <div className="app">
-      <header className="topbar">
+    <div className="shell">
+      <aside className="sidebar glass">
         <div className="brand">
           <KeyMark />
           <div>
             <strong>Llaverito</strong>
-            <span>Llaves</span>
+            <span>Bóveda municipal</span>
           </div>
         </div>
-        <p className="who">
-          {user.name}
-          <span>{user.email}</span>
-        </p>
-        <a className="text-link" href="/classic/">Consola clásica</a>
-        <button className="btn ghost" type="button" onClick={onLogout}>Salir</button>
-      </header>
 
-      <div className="workbench">
-        <aside className="rail">
-          <p className="eyebrow">Carpetas</p>
-          <button className={folderId ? "nav" : "nav on"} type="button" onClick={() => chooseFolder(null)}>Todas</button>
-          <button className={folderId === SHARED ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(SHARED)}>Compartidas conmigo</button>
+        <nav className="nav-group" aria-label="Vistas">
+          <button className={folderId ? "nav" : "nav on"} type="button" onClick={() => chooseFolder(null)}>
+            <Icon.stack />
+            <span>Todas las llaves</span>
+          </button>
+          <button className={folderId === SHARED ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(SHARED)}>
+            <Icon.shared />
+            <span>Compartidas conmigo</span>
+          </button>
+        </nav>
+
+        <nav className="nav-group folders" aria-label="Carpetas">
+          <p className="nav-title">Carpetas</p>
+          {folders.length === 0 ? <p className="nav-title">Sin carpetas todavía.</p> : null}
           {folders.map((folder) => (
             <button key={folder.id} className={folderId === folder.id ? "nav on" : "nav"} type="button" onClick={() => chooseFolder(folder.id)}>
+              <Icon.folder />
               <span>{folder.name}</span>
               <small>{folder.level === "write" ? "escritura" : "lectura"}</small>
             </button>
           ))}
           {user.role === "admin" ? (
-            <form className="mini" onSubmit={(event) => void createFolder(event)}>
-              <label>
-                Nueva carpeta
-                <input value={folderName} onChange={(event) => setFolderName(event.target.value)} maxLength={120} required placeholder="Nombre" />
-              </label>
-              <button className="btn" type="submit">Crear</button>
+            <form className="new-folder" onSubmit={(event) => void createFolder(event)}>
+              <input
+                aria-label="Nombre de la nueva carpeta"
+                value={folderName}
+                onChange={(event) => setFolderName(event.target.value)}
+                maxLength={120}
+                required
+                placeholder="Nueva carpeta"
+              />
+              <button className="icon-btn" type="submit" title="Crear carpeta" aria-label="Crear carpeta">
+                <Icon.plus />
+              </button>
             </form>
           ) : null}
-        </aside>
+        </nav>
 
-        <section className="list">
-          <div className="list-head">
-            <div>
-              <h1>Llaves</h1>
-              <p>{visible.length} en esta vista. El valor cifrado no viaja hasta que lo desencriptás.</p>
-            </div>
-            <button
-              className="btn"
-              type="button"
-              disabled={writable.length === 0}
-              title={writable.length === 0 ? "Creá una carpeta primero" : undefined}
-              onClick={() => {
-                setDraft(emptyDraft(writable.find((folder) => folder.id === folderId)?.id ?? writable[0]?.id ?? ""));
-                setCreating(true);
-                setError(null);
-              }}
-            >
-              Nueva llave
-            </button>
+        <div className="account">
+          <span className="avatar" aria-hidden="true">{initials(user.name)}</span>
+          <div>
+            <strong>{user.name}</strong>
+            <span>{ROLE_LABEL[user.role] ?? user.role} · {user.email}</span>
           </div>
-          <label className="search">
-            Buscar
-            <input type="search" value={query} placeholder="Nombre, carpeta o referencia" onChange={(event) => setQuery(event.target.value)} />
+          <button className="icon-btn" type="button" onClick={onLogout} title="Salir" aria-label="Salir">
+            <Icon.logout />
+          </button>
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topline">
+          <div className="title">
+            <h1>{viewTitle}</h1>
+            <p>
+              {visible.length === 1 ? "1 llave" : `${visible.length} llaves`}. El valor cifrado no viaja hasta que lo desencriptás.
+            </p>
+          </div>
+          <a className="classic" href="/classic/">Consola clásica</a>
+          <button
+            className="btn"
+            type="button"
+            disabled={writable.length === 0}
+            title={writable.length === 0 ? "Creá una carpeta primero" : undefined}
+            onClick={openCreate}
+          >
+            <Icon.plus />
+            Nueva llave
+          </button>
+        </header>
+
+        <div className="toolbar">
+          <label className="search glass">
+            <Icon.search />
+            <input
+              type="search"
+              aria-label="Buscar llaves"
+              value={query}
+              placeholder="Buscar por nombre, carpeta o referencia"
+              onChange={(event) => setQuery(event.target.value)}
+            />
           </label>
-          {error && !creating && !selected ? <p className="alert" role="alert">{error}</p> : null}
-          {visible.length === 0 ? (
-            <div className="empty">
-              <KeyMark />
-              <p>Todavía no hay llaves en esta vista.</p>
-            </div>
-          ) : (
-            <ul className="cards">
-              {visible.map((item) => (
-                <li key={item.id}>
-                  <button className={item.id === selectedId ? "card on" : "card"} type="button" onClick={() => chooseItem(item.id)}>
-                    <span className="kind">{TYPE_LABEL[item.type] ?? item.type}</span>
-                    <strong>{item.name}</strong>
-                    <span className="meta">{item.folder}{item.sensitive ? " · sensible" : ""}</span>
-                    <code>{item.ref}</code>
-                  </button>
-                </li>
+          {typeCounts.size > 1 ? (
+            <div className="chips" role="group" aria-label="Filtrar por tipo">
+              <button className={typeFilter ? "chip" : "chip on"} type="button" aria-pressed={!typeFilter} onClick={() => setTypeFilter(null)}>
+                Todos<b>{matching.length}</b>
+              </button>
+              {[...typeCounts.entries()].map(([type, count]) => (
+                <button
+                  key={type}
+                  className={typeFilter === type ? "chip on" : "chip"}
+                  type="button"
+                  aria-pressed={typeFilter === type}
+                  onClick={() => setTypeFilter(typeFilter === type ? null : type)}
+                >
+                  {TYPE_LABEL[type] ?? type}<b>{count}</b>
+                </button>
               ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="detail" aria-live="polite">
-          {!selected ? (
-            <div className="empty">
-              <p>Elegí una llave para ver el detalle y desencriptarla.</p>
             </div>
-          ) : (
-            <>
-              <p className="eyebrow">{TYPE_LABEL[selected.type] ?? selected.type}</p>
-              <h2>{selected.name}</h2>
-              <dl>
-                <div><dt>Referencia</dt><dd><code>{selected.ref}</code></dd></div>
-                <div><dt>Carpeta</dt><dd>{selected.folder}</dd></div>
-                <div><dt>Descripción</dt><dd>{asString(selected.meta.description) || "—"}</dd></div>
-                {http ? (
-                  <div><dt>Hosts</dt><dd>{asStringList(selected.meta.allowed_hosts).join(", ") || "Ninguno"}</dd></div>
-                ) : (
-                  <div><dt>Destino</dt><dd>{asString(selected.meta.username)}@{asString(selected.meta.host)}:{String(selected.meta.port ?? "")}</dd></div>
-                )}
-                <div><dt>Versión</dt><dd>{selected.version}</dd></div>
-              </dl>
+          ) : null}
+        </div>
 
-              {secret ? (
-                <div className="secret">
-                  <div className="secret-head">
-                    <h3>Valor desencriptado</h3>
-                    <button className="btn ghost" type="button" onClick={() => { setSecret(null); setNotice(null); }}>Ocultar</button>
+        <div className="workbench">
+          <section className="panel glass" aria-label="Llaves">
+            {error && !creating && !selected ? <p className="alert" role="alert">{error}</p> : null}
+            {visible.length === 0 ? (
+              <div className="empty">
+                <KeyMark />
+                <strong>{query || typeFilter ? "Nada coincide con la búsqueda" : "Esta vista no tiene llaves"}</strong>
+                <p>
+                  {query || typeFilter
+                    ? "Probá con otro nombre o quitá el filtro de tipo."
+                    : writable.length > 0
+                      ? "Guardá la primera con Nueva llave. Queda cifrada desde el primer momento."
+                      : "Pedile a un administrador acceso de escritura a una carpeta."}
+                </p>
+              </div>
+            ) : (
+              <ul className="rows">
+                {visible.map((item) => (
+                  <li key={item.id}>
+                    <button className={item.id === selectedId ? "row on" : "row"} type="button" onClick={() => chooseItem(item.id)}>
+                      <span className={isSsh(String(item.type)) ? "glyph ssh" : "glyph"}>
+                        {isSsh(String(item.type)) ? <Icon.terminal /> : <Icon.key />}
+                      </span>
+                      <span className="row-main">
+                        <strong>{item.name}</strong>
+                        <code>{item.ref}</code>
+                      </span>
+                      <span className="row-side">
+                        <span className="tag">{TYPE_LABEL[item.type] ?? item.type}</span>
+                        <span>
+                          {item.access === "shared" ? "compartida" : item.folder}
+                          {item.sensitive ? ", sensible" : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="detail panel glass" aria-live="polite" aria-label="Detalle">
+            {!selected ? (
+              <div className="empty">
+                <Icon.lock />
+                <strong>Ninguna llave elegida</strong>
+                <p>Elegí una de la lista para ver sus datos y desencriptarla.</p>
+              </div>
+            ) : (
+              <>
+                <div className="detail-head">
+                  <span className={isSsh(String(selected.type)) ? "glyph ssh" : "glyph"}>
+                    {isSsh(String(selected.type)) ? <Icon.terminal /> : <Icon.key />}
+                  </span>
+                  <div>
+                    <h2>{selected.name}</h2>
+                    <p>{TYPE_LABEL[selected.type] ?? selected.type}, versión {selected.version}{updatedLabel(selected.updated_at) ? `, actualizada ${updatedLabel(selected.updated_at)}` : ""}</p>
                   </div>
-                  {Object.entries(secret).map(([key, value]) => (
-                    <div key={key} className="secret-field">
-                      <span>{key}</span>
-                      <pre>{value}</pre>
-                      <button className="btn ghost" type="button" onClick={() => void copyValue(value)}>Copiar</button>
-                    </div>
-                  ))}
                 </div>
-              ) : canReveal ? (
-                <form className="reveal" onSubmit={(event) => void reveal(event)}>
-                  <h3>Desencriptar</h3>
-                  <p>Confirmá tu contraseña. Esta acción queda auditada y el valor no se guarda en el navegador.</p>
-                  <label>
-                    Contraseña
-                    <input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-                  </label>
-                  <button className="btn" type="submit">Desencriptar</button>
-                </form>
-              ) : (
-                <p className="note">Esta llave no se puede revelar con tu acceso.</p>
-              )}
-              {error ? <p className="alert" role="alert">{error}</p> : null}
-              {notice ? <p className="note" role="status">{notice}</p> : null}
-            </>
-          )}
-        </section>
-      </div>
+
+                <dl className="facts">
+                  <div><dt>Referencia</dt><dd><code>{selected.ref}</code></dd></div>
+                  <div><dt>Carpeta</dt><dd>{selected.folder}</dd></div>
+                  <div><dt>Descripción</dt><dd>{asString(selected.meta.description) || "Sin descripción"}</dd></div>
+                  {http ? (
+                    <div><dt>Hosts</dt><dd>{asStringList(selected.meta.allowed_hosts).join(", ") || "Ninguno"}</dd></div>
+                  ) : (
+                    <div><dt>Destino</dt><dd>{asString(selected.meta.username)}@{asString(selected.meta.host)}:{String(selected.meta.port ?? "")}</dd></div>
+                  )}
+                  {selected.access === "shared" ? (
+                    <div>
+                      <dt>Acceso</dt>
+                      <dd>
+                        <span className="tag share">{selected.share_level === "reveal" ? "puede ver el valor" : "solo uso"}</span>
+                      </dd>
+                    </div>
+                  ) : null}
+                  {selected.sensitive ? (
+                    <div><dt>Marca</dt><dd><span className="tag warn">sensible</span></dd></div>
+                  ) : null}
+                </dl>
+
+                {secret ? (
+                  <div className="seal open">
+                    <div className="seal-head">
+                      <h3><Icon.unlock />Valor desencriptado</h3>
+                      <button className="btn ghost small" type="button" onClick={() => { setSecret(null); setNotice(null); }}>Ocultar</button>
+                    </div>
+                    <div className="fuse" title="Se oculta solo en 3 minutos"><i key={selected.id} /></div>
+                    {Object.entries(secret).map(([key, value]) => (
+                      <div key={key} className="secret-field">
+                        <span>{key}</span>
+                        <div className="secret-value">
+                          <pre>{value}</pre>
+                          <button className="icon-btn" type="button" title={`Copiar ${key}`} aria-label={`Copiar ${key}`} onClick={() => void copyValue(value)}>
+                            <Icon.copy />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : canReveal ? (
+                  <form className="seal" onSubmit={(event) => void reveal(event)}>
+                    <h3><Icon.lock />Desencriptar</h3>
+                    <p>Confirmá tu contraseña. Queda registrado en la auditoría y el valor no se guarda en el navegador.</p>
+                    <label>
+                      Tu contraseña
+                      <input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+                    </label>
+                    <button className="btn" type="submit">Desencriptar</button>
+                  </form>
+                ) : (
+                  <p className="locked"><Icon.lock />Tu acceso no permite ver el valor de esta llave.</p>
+                )}
+                {error ? <p className="alert" role="alert">{error}</p> : null}
+              </>
+            )}
+          </section>
+        </div>
+      </main>
+
+      {notice ? (
+        <p className="toast glass" role="status">
+          <Icon.check />
+          {notice}
+        </p>
+      ) : null}
 
       {creating ? (
         <div className="modal-bg">
-          <form className="modal" onSubmit={(event) => void createItem(event)}>
-            <h2>Nueva llave</h2>
-            <label>
-              Carpeta
-              <select value={draft.folderId} onChange={(event) => setDraft({ ...draft, folderId: event.target.value })}>
-                {writable.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Nombre
-              <input required maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-            </label>
-            <label>
-              Tipo
-              <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as CredType })}>
-                {TYPES.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
-              </select>
-            </label>
+          <form className="modal glass" role="dialog" aria-modal="true" aria-labelledby="new-key-title" onSubmit={(event) => void createItem(event)}>
+            <div className="modal-head">
+              <h2 id="new-key-title">Nueva llave</h2>
+              <p>Se guarda cifrada. Después solo la ve quien la desencripte con su contraseña.</p>
+            </div>
+            <div className="grid-2">
+              <label>
+                Nombre
+                <input required maxLength={120} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              </label>
+              <label>
+                Carpeta
+                <select value={draft.folderId} onChange={(event) => setDraft({ ...draft, folderId: event.target.value })}>
+                  {writable.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                </select>
+              </label>
+            </div>
+            <div role="radiogroup" aria-label="Tipo" className="types">
+              {TYPES.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.type === entry.id}
+                  className={draft.type === entry.id ? "type-option on" : "type-option"}
+                  onClick={() => setDraft({ ...draft, type: entry.id })}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
             <label>
               Descripción
-              <input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+              <input value={draft.description} placeholder="Para qué sirve y quién la usa" onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
             </label>
-            {TYPES.find((entry) => entry.id === draft.type)?.http ? (
+            {draftHttp ? (
               <label>
                 Hosts permitidos
                 <textarea value={draft.hosts} placeholder={"api.ejemplo.com\n*.ejemplo.com"} onChange={(event) => setDraft({ ...draft, hosts: event.target.value })} />
               </label>
             ) : (
-              <>
+              <div className="grid-port">
                 <label>
                   Host
                   <input required value={draft.host} onChange={(event) => setDraft({ ...draft, host: event.target.value })} />
@@ -396,12 +549,12 @@ export function Vault({
                   Puerto
                   <input required type="number" min={1} max={65535} value={draft.port} onChange={(event) => setDraft({ ...draft, port: event.target.value })} />
                 </label>
-              </>
+              </div>
             )}
             <label>
               Usuario
               <input
-                required={!TYPES.find((entry) => entry.id === draft.type)?.http || draft.type === "basic_auth"}
+                required={!draftHttp || draft.type === "basic_auth"}
                 value={draft.username}
                 onChange={(event) => setDraft({ ...draft, username: event.target.value })}
               />

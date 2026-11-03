@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
+import { KeyMark } from "./icons";
 import type { User } from "./types";
 
 type Gate = "loading" | "setup" | "login" | "offline";
@@ -48,10 +49,14 @@ export function Login({ onSuccess }: { onSuccess: (user: User) => void }) {
 
   return (
     <main className="login-screen">
-      <form className="login-card" onSubmit={(event) => void submit(event)}>
-        <KeyMark />
-        <p className="eyebrow">Bóveda municipal</p>
-        <h1>Llaverito</h1>
+      <form className="login-card glass" onSubmit={(event) => void submit(event)}>
+        <div className="login-brand">
+          <KeyMark />
+          <div>
+            <h1>Llaverito</h1>
+            <span>Bóveda de credenciales municipal</span>
+          </div>
+        </div>
         {gate === "loading" ? <p className="lede">Abriendo…</p> : null}
         {gate === "offline" ? (
           <p className="alert" role="alert">No llego al servidor. En la carpeta del proyecto ejecutá <code>llaverito serve</code> y recargá esta página.</p>
@@ -98,15 +103,5 @@ export function Login({ onSuccess }: { onSuccess: (user: User) => void }) {
         ) : null}
       </form>
     </main>
-  );
-}
-
-export function KeyMark() {
-  return (
-    <svg className="mark" viewBox="0 0 48 48" aria-hidden="true">
-      <circle cx="18" cy="18" r="10" fill="none" stroke="currentColor" strokeWidth="3" />
-      <circle cx="18" cy="18" r="3.5" fill="currentColor" />
-      <path d="M26 22 L42 38 M34 38 H42 V30" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }

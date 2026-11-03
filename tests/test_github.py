@@ -61,6 +61,7 @@ def test_start_redirects_to_github_with_state(gh_env):
     query = parse_qs(target.query)
     assert target.netloc == "github.com" and query["client_id"] == ["Iv1.test"]
     assert query["redirect_uri"] == ["http://testserver/api/auth/github/callback"]
+    assert query["allow_signup"] == ["true"]
     assert "llv_oauth_state" in r.headers["set-cookie"] and "samesite=lax" in r.headers["set-cookie"].lower()
 
 
@@ -98,6 +99,12 @@ def test_bad_state_or_code_does_not_log_in(gh_env):
     r = c.get("/api/auth/github/start")
     state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
     r = c.get("/api/auth/github/callback", params={"code": "desconocido", "state": state})
+    assert r.headers["location"] == "/?login_error=github_rejected"
+    assert c.get("/api/auth/me").status_code == 401
+
+    r = c.get("/api/auth/github/start")
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    r = c.get("/api/auth/github/callback", params={"error": "access_denied", "state": state})
     assert r.headers["location"] == "/?login_error=github_rejected"
     assert c.get("/api/auth/me").status_code == 401
 

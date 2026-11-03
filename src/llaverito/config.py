@@ -139,6 +139,13 @@ def apply_platform(settings: Settings, env: Mapping[str, str]) -> Settings:
             if env.get(name) and env[name] not in hosts:
                 hosts.append(env[name])
         settings.public_hosts = ",".join(hosts)
+    # Settings lee LLAVERITO_GITHUB_*; en Vercel a veces cargan GITHUB_CLIENT_ID/SECRET sin prefijo.
+    if not settings.github_client_id:
+        settings.github_client_id = (env.get("GITHUB_CLIENT_ID") or "").strip()
+    if settings.github_client_secret is None and env.get("GITHUB_CLIENT_SECRET"):
+        settings.github_client_secret = SecretStr(env["GITHUB_CLIENT_SECRET"])
+    if not settings.github_callback_url:
+        settings.github_callback_url = (env.get("GITHUB_CALLBACK_URL") or "").strip()
     return settings
 
 
